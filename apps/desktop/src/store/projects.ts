@@ -180,6 +180,38 @@ export function projectIdForCwd(cwd: string): null | string {
   return best
 }
 
+function projectNameFromPath(path: string): string {
+  const normalized = path.trim().replace(/[\\/]+$/, '')
+  const parts = normalized.split(/[\\/]+/).filter(Boolean)
+  return parts.at(-1) || 'Project'
+}
+
+// The folder picker is the shortcut into the project model: selecting a folder
+// enters its existing owner or creates a named project for it before staging a
+// new chat there.
+export async function ensureProjectForFolder(cwd: string): Promise<string> {
+  const trimmed = cwd.trim()
+  const existingProjectId = projectIdForCwd(trimmed)
+
+  if (existingProjectId) {
+    enterProject(existingProjectId)
+    return trimmed
+  }
+
+  const created = await createProject({
+    folders: [trimmed],
+    name: projectNameFromPath(trimmed),
+    use: true
+  })
+
+  if (created === null) {
+    throw new Error('projects.create returned no project')
+  }
+
+  enterProject(created.id)
+  return (created.primary_path || created.folders?.[0]?.path || trimmed).trim() || trimmed
+}
+
 // The active session's agent relocated itself (created/entered another repo or
 // worktree via the terminal — backend re-anchors its cwd and emits session.info).
 // Re-pull projects + tree so a freshly created/auto project and the relocated

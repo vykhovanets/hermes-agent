@@ -4,11 +4,14 @@ import { $sidebarAgentsGrouped } from '@/store/layout'
 
 import {
   $activeProjectId,
+  $projects,
   $projectScope,
   $projectsRpcAvailable,
+  $projectTree,
   $worktreeRefreshToken,
   ALL_PROJECTS,
   createProject,
+  ensureProjectForFolder,
   enterProject,
   exitProjectScope,
   openProjectCreate,
@@ -164,6 +167,55 @@ describe('createProject', () => {
       'sidebar.projects.staleBackend'
     )
     expect($projectsRpcAvailable.get()).toBe(false)
+  })
+})
+
+describe('ensureProjectForFolder', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    $activeProjectId.set(null)
+    $projectScope.set(ALL_PROJECTS)
+    $projects.set([])
+    $projectTree.set([])
+    $projectsRpcAvailable.set(null)
+  })
+
+  it('creates and enters a project named after an unowned folder', async () => {
+    const created = { folders: [{ path: '/srv/my-space' }], id: 'p_my_space', name: 'my-space', primary_path: '/srv/my-space' }
+    const request = vi.fn(async (method: string) => {
+      if (method === 'projects.create') {
+        return { project: created }
+      }
+
+      return { active_id: 'p_my_space', projects: [created], scoped_session_ids: [] }
+    })
+
+    activeGateway.mockReturnValue({ connectionState: 'open', request } as never)
+
+    await expect(ensureProjectForFolder('/srv/my-space')).resolves.toBe('/srv/my-space')
+    expect(request).toHaveBeenCalledWith(
+      'projects.create',
+      expect.objectContaining({ folders: ['/srv/my-space'], name: 'my-space', use: true })
+    )
+    expect($projectScope.get()).toBe('p_my_space')
+    expect($activeProjectId.get()).toBe('p_my_space')
+  })
+
+  it('enters an existing project that already owns the selected folder', async () => {
+    $projectTree.set([
+      {
+        id: 'p_existing',
+        path: '/workspace/repo',
+        repos: []
+      } as never
+    ])
+    const request = vi.fn().mockResolvedValue({})
+    activeGateway.mockReturnValue({ connectionState: 'open', request } as never)
+
+    await expect(ensureProjectForFolder('/workspace/repo/packages/app')).resolves.toBe('/workspace/repo/packages/app')
+
+    expect(request).not.toHaveBeenCalledWith('projects.create', expect.anything())
+    expect($projectScope.get()).toBe('p_existing')
   })
 })
 

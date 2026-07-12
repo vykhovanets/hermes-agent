@@ -2,6 +2,7 @@ import { type MutableRefObject, useCallback } from 'react'
 
 import { useI18n } from '@/i18n'
 import { notify, notifyError } from '@/store/notifications'
+import { ensureProjectForFolder } from '@/store/projects'
 import { $currentCwd, setCurrentBranch, setCurrentCwd } from '@/store/session'
 import type { SessionRuntimeInfo } from '@/types/hermes'
 
@@ -54,12 +55,22 @@ export function useCwdActions({
       }
 
       if (!activeSessionId) {
-        setCurrentCwd(trimmed)
+        let resolved: string
+
+        try {
+          resolved = await ensureProjectForFolder(trimmed)
+        } catch (err) {
+          setCurrentBranch('')
+          notifyError(err, copy.cwdChangeFailed)
+          return
+        }
+
+        setCurrentCwd(resolved)
 
         try {
           const info = await requestGateway<{ branch?: string; cwd?: string }>('config.get', {
             key: 'project',
-            cwd: trimmed
+            cwd: resolved
           })
 
           // Adopt the backend's normalized cwd so the persisted workspace and
